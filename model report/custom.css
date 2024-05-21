@@ -1,0 +1,22 @@
+.tab-content{
+  padding: 5px;
+  margin-bottom: 5px;
+}
+
+.crosstalk-input .control-label {
+  font-size: smaller;
+  font-weight: 500;
+}
+
+.crosstalk-input {
+    margin-bottom: 0px;
+}
+
+.crosstalk-input .checkbox-inline {
+    font-weight: 200;
+    font-size: smaller;
+}
+.container-fluid.crosstalk-bscols {
+    margin-left: -10px;
+    margin-right: 0px;
+}

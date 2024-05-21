@@ -1,0 +1,825 @@
+---
+title: "Utbredning av fisk på Västkusten"
+author: "Mårten Erlandsson"
+format: 
+  html:
+    code-tools: true
+    self-contained: true
+    smooth-scroll: true
+    code-fold: true
+    toc: true
+    toc-depth: 4
+    toc-title: Innehåll
+    toc-location: left
+    number-sections: true
+    number-depth: 4
+    highlight-style: github
+    css: custom.css
+execute: 
+  warning: false
+---
+
+# Dataset
+
+This is a report from the 
+
+The models are based on trawling data on the west coast
+
+There are three data sources; IBTS, BITS and NATS 
+
+
+###### Laddar in R-paket
+
+```{r}
+library(rio) # Importera data
+library(dplyr) # Datahantering
+library(tidyr) # Datahantering
+library(ggplot2) # Grafer
+library(DT) # Tabeller
+library(leaflet) # Interaktiv karta
+library(leaflet.extras)
+library(grid) # Grafer
+library(usdm) # VIF
+library(GGally) # Korrelationsplot
+library(sdmpredictors) # Test-prediktorer
+library(sf) # Shape-hantering
+library(raster) # Rasterhantering
+library(terra) # Rasterhantering
+library(mgcv) # GAM-modellering
+library(gratia) # Gam visualisering
+library(sdm) # Ensemblemodellering med abundans
+library(biomod2) # Ensemblemodellering PA
+library(SLUcolors)
+source("NMK_WestCoast_modFunc.r")
+```
+
+```{r}
+#| message: false
+#| output: false
+
+master <- readRDS("R/helpFiles/master.rds")
+predStack <- readRDS("R/helpFiles/predStack.rds")
+# ext <- extent(8.985977, 13.54149, 55.028, 59.80818)
+# predStack <- crop(predStack, ext)
+# predStack[[1]] <- reclassify(predStack[[1]], cbind(-Inf, 5.72, 5.72), right=FALSE)
+# predStack[[1]] <- reclassify(predStack[[1]], cbind(10.314, Inf, 10.314), right=FALSE)
+# predStack[[2]] <- reclassify(predStack[[2]], cbind(-Inf, 12.38, 12.38), right=FALSE)
+# predStack[[2]] <- reclassify(predStack[[2]], cbind(35.21, Inf, 35.21), right=FALSE)
+# predStack[[3]] <- reclassify(predStack[[3]], cbind(-Inf, 249.6, 249.6), right=FALSE)
+# predStack[[3]] <- reclassify(predStack[[3]], cbind(330.7, Inf, 330.7), right=FALSE)
+# predStack[[4]] <- reclassify(predStack[[4]], cbind(6, Inf, 6), right=FALSE)
+# predStack[[4]] <- reclassify(predStack[[4]], cbind(-Inf, 4.1, 4.1), right=FALSE)
+# predStack[[5]] <- reclassify(predStack[[5]], cbind(-Inf, 4.38, 4.38), right=FALSE)
+# predStack[[5]] <- reclassify(predStack[[5]], cbind(541.35, Inf, 541.35), right=FALSE)
+# predStack[[6]] <- reclassify(predStack[[6]], cbind(-Inf, 0.0009631, 0.0009631), right=FALSE)
+# predStack[[6]] <- reclassify(predStack[[6]], cbind(0.1724964, Inf, 0.1724964), right=FALSE)
+# predStack[[7]] <- reclassify(predStack[[7]], cbind(9.59173, Inf, 9.59173), right=FALSE)
+# predStack[[7]] <- reclassify(predStack[[7]], cbind(-Inf, 0.03582, 0.03582), right=FALSE)
+# predStack[[8]] <- reclassify(predStack[[8]], cbind(-Inf, 0, 0), right=FALSE)
+# predStack[[8]] <- reclassify(predStack[[8]], cbind(25.04596, Inf, 25.04596), right=FALSE)
+
+
+ibts_hl <- import("indata/raw/ibts_hl_to_klab_20220601.csv") |> mutate(source = "IBTS")
+nats_hl <- import("indata/raw/nats_hl_to_klab_20230215.csv") |> mutate(source = "NATS")
+bits_hl <- import("indata/raw/bits_hl_to_klab_20230214.csv") |> mutate(source = "BITS")
+
+tot_hl <- rbind(nats_hl, ibts_hl, bits_hl) |>  # na.omit() |>
+  mutate(year = as.numeric(substr(haul.id, 1, 4)))
+
+tot_hl_wide <- tot_hl |> 
+  dplyr::filter(LngtCm > 20) |>
+  group_by(haul.id, Species, source) |> 
+  summarise(number = sum(Number)) |> 
+  spread(Species, number, fill = 0)
+
+```
+
+###### Importerar och strukturerar data
+
+```{r}
+#| eval: false
+
+ibts_hh <- import("indata/raw/ibts_hh_to_klab_20220601.csv") |> mutate(source = "IBTS")
+ibts_hl <- import("indata/raw/ibts_hl_to_klab_20220601.csv") |> mutate(source = "IBTS")
+nats_hh <- import("indata/raw/nats_hh_to_klab_20230215.csv") |> mutate(source = "NATS")
+nats_hl <- import("indata/raw/nats_hl_to_klab_20230215.csv") |> mutate(source = "NATS")
+bits_hh <- import("indata/raw/bits_hh_to_klab_20230214.csv") |> mutate(source = "BITS")
+bits_hl <- import("indata/raw/bits_hl_to_klab_20230214.csv") |> mutate(source = "BITS")
+
+tot_hh <- rbind(nats_hh, ibts_hh, bits_hh) |>
+  dplyr::select(haul.id, Survey, Quarter, Year, Month, Day, ShootLat, ShootLong, Depth, sweptAreaDS_km2, source)
+
+tot_hl <- rbind(nats_hl, ibts_hl, bits_hl) |>
+  mutate(year = as.numeric(substr(haul.id, 1, 4)))
+
+tot_hl_wide <- tot_hl |>
+  dplyr::filter(LngtCm > 20) |>
+  group_by(haul.id, Species, source) |>
+  summarise(number = sum(Number)) |>
+  spread(Species, number, fill = 0)
+
+master <- merge(tot_hh, tot_hl_wide, by = "haul.id", all.x = T) |> na.omit()
+```
+
+## Trålningar
+
+Ett antal trålningar försvinner av olika anledningar. Här är en översikt över varför vissa trålningar inte går att använda i modelleringen:
+
+Antal trålningar i rawfilerna: **7857**\
+Antal trålningar eftar na.omit(): **7393**\
+
+```{r}
+#| output: asis
+
+trawlPerYear <- function(source = NULL){
+  if(!is.null(source)){
+    dat1 <- master |> filter(source.x == source)
+  }
+  else{
+    dat1 <- master
+  }
+  dat <- dat1 |>
+    group_by(Year, Quarter) |>
+    summarise("Number of surveys" = n())
+  theme_set(theme_classic())
+  p <- ggplot(dat, aes(x = Year, y = `Number of surveys`,
+                  fill = factor(Quarter, levels = c(4,3,2,1)))) +
+    geom_bar(stat = "identity") +
+    guides(fill=guide_legend(title="Quarter"))
+  grid.newpage()
+  grid.draw(ggplotGrob(p))
+}
+cat("\n::: panel-tabset\n")
+cat("\n#### Trålningar per år \n")
+
+cat("\n::: panel-tabset\n")
+for(i in c("Totalt", "BITS", "IBTS", "NATS")){
+  cat("\n#####", i," \n")
+  if(i == "Totalt"){
+    i <- NULL
+  }
+  trawlPerYear(i)
+}
+cat("\n:::\n")
+
+cat("\n#### Trålningar per månad \n")
+yearTable <- master |>
+  dplyr::select(Year, Month) |>
+  group_by(Year, Month) |>
+  summarise(n = n()) |>
+  spread("Month", "n", fill = 0) |> as.data.frame()
+rownames(yearTable) <- yearTable$Year
+
+brks <- quantile(c(1, seq(5, 50, 5)), probs = seq(.1, .9, .1), na.rm = TRUE)
+ramp <- colorRampPalette(SLUcolors::SLUpalette("red")[5:3])
+clrs <- ramp(length(brks)+1)
+
+DT::datatable(yearTable[,-1],
+              options = list(
+                dom = 't',
+                pageLength = nrow(yearTable),
+                scrollX = TRUE,
+                scrollY = '300px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              )
+) |>
+  DT::formatStyle(0, target = 'row', backgroundColor = "white",
+                  lineHeight = '30%', fontSize = '50%') |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleInterval(brks, clrs)) |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleEqual(0, 'white'))
+cat("\n:::\n")
+
+```
+
+## Fångster
+
+```{r}
+#| output: asis
+species <- c(
+  "Gadus morhua"
+  # , "Pleuronectes platessa", "Microstomus kitt", "Merluccius merluccius",
+  #  "Merlangius merlangus", "Limanda limanda", "Solea solea", "Hippoglossoides platessoides",
+  # "Eutrigla gurnardus", "Platichthys flesus"
+  #"Melanogrammus aeglefinus", "Amblyraja radiata",
+  #, "Clupea harengus", "Enchelyopus cimbrius",
+  #  "Glyptocephalus cynoglossus", "Lumpenus lampretaeformis",
+  # "Pollachius virens", "Myxine glutinosa", "Cyclopterus lumpus", "Trachinus draco",
+  # "Scophthalmus rhombus", "Scomber scombrus", "Squalus acanthias", "Scophthalmus maximus",
+  # "Trachurus trachurus", "Pollachius pollachius", "Callionymus lyra", "Myoxocephalus scorpius",
+  # "Lycodes vahlii", "Molva molva", "Lophius piscatorius", "Trisopterus minutus", "Anarhichas lupus",
+  # "Anguilla anguilla", "Loligo forbesii", "Micromesistius poutassou", "Raja clavata",
+  # "Chelidonichthys lucerna", "Entelurus aequoreus", "Hyperoplus lanceolatus", "Chimaera monstrosa",
+  # "Scyliorhinus canicula"
+  )
+
+speciesPA <- master |> dplyr::select(all_of(species))
+speciesPA[speciesPA>0] <- 1
+
+cat("\n::: panel-tabset\n")
+cat("\n#### Fångstkarta \n")
+spMap <- master |>
+  dplyr::select(Year, Month, Quarter, Depth, source.x, ShootLat, ShootLong, !!!syms(species))
+
+ll <- leaflet(spMap) |>  addProviderTiles(providers$CartoDB.Positron)
+for(i in species){
+  pal <- colorNumeric(SLUcolors::SLUpalette("red"),na.color = "#FFFFFF00", reverse = T, domain = log(spMap[spMap[,i]>0,i]) + 3)
+  ll <- ll |> 
+    addCircleMarkers(~ShootLong, ~ShootLat, spMap[,i], radius = ~(log(spMap[,i]+1) + 3), color = "grey",
+                               fillColor = ~pal(log(spMap[,i]) + 3), label = ~round(spMap[,i],0),
+                               opacity = 0.5, fillOpacity = 0.8, weight = 1, data = spMap |> arrange(spMap[,i]), group = i) |> 
+    addHeatmap(~ShootLong, ~ShootLat, spMap[,i], group = paste(i, "heat"), blur = 40)
+  
+}
+ll |> addLayersControl(overlayGroups = c(species, paste(species, "heat")), options = layersControlOptions(collapsed = FALSE))
+
+cat("\n#### Tabell \n")
+
+tot_hl_20 <- tot_hl |> filter(LngtCm > 20)
+antalTrålningar <- tot_hl_20$haul.id |> unique() |> length()
+tot_hl_20 |>
+  group_by(haul.id, Species) |>
+  summarise(Number = sum(Number)) |>
+  group_by(Species) |>
+  summarise(antalIndivider = round(sum(Number), 0),
+            antalFörekomster = n(),
+            antalNollor = antalTrålningar-n()) |>
+  arrange(-antalIndivider) |>
+  DT::datatable(rownames = F)
+
+cat("\n#### Fångster per år och art \n")
+dat <- master |>
+  dplyr::select(Year, Quarter, sweptAreaDS_km2, !!!syms(species)) |>
+  gather(sp, nr, !!!syms(species)) |>
+  group_by(Year, Quarter, sp) |>
+  summarise(sweptArea =sum(sweptAreaDS_km2),
+            Number = sum(nr)) |>
+  mutate(nrPerSweptArea = Number/sweptArea)
+
+plotYear <- function(spec){
+  p1 <- ggplot(dat |> filter(sp == spec),
+               aes(x = Year, y = Number, fill = Quarter)) +
+    geom_bar(stat = "identity") +
+    guides(fill=guide_legend(title="Quarter")) +
+    theme(legend.position = c(0.1, 0.7))
+  p2 <- ggplot(dat |> filter(sp == spec),
+               aes(x = Year, y = nrPerSweptArea)) +
+    geom_bar(stat = "identity")
+  grid.newpage()
+  grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "last"))
+}
+
+cat("::: panel-tabset\n")
+for(i in species){
+  cat("\n#####", i," \n")
+  plotYear(i)
+}
+cat("\n:::\n")
+
+cat("\n:::\n")
+```
+
+# Prediktorer
+
+```{r}
+predLayers <- master[,c(names(predStack))]
+predStack |> plot()
+
+```
+
+###### Hämtar prediktorvärden till provtagningspunkter
+
+```{r}
+#| eval: false
+#|
+spMapPoint <- st_as_sf(spMap, coords = c("ShootLong", "ShootLat"), crs = 4326)
+spMapPred <- raster::extract(predictorsTestCrop, spMapPoint) |> as.data.frame()
+```
+
+## Korrelation
+
+### Korrelationsgraf
+
+```{r}
+# Lägger till en röd smooth-line i korrelationsgrafens undre del
+lower_fn <- function(data, mapping, ...){
+  ggplot(data, mapping) +
+    geom_point() +
+    geom_smooth(fill="red", color="red")
+}
+
+# Lägger till färger i korrelationsgrafens övre del
+upper_fn <- function(data, mapping, method="p", use="pairwise", ...){
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  corr <- cor(x,y, method=method, use=use)
+  colFn <- colorRampPalette(c("blue", "white", "red"), interpolate="spline")
+  fill <- colFn(100)[findInterval(corr, seq(-1,1, length=100))]
+  ggally_cor(data=data, mapping=mapping, ...) +
+    theme_void() +
+    theme(panel.background = element_rect(fill=fill))
+}
+
+# Plottar korrelationsgrafen
+ggpairs(predLayers,
+        lower = list(continuous = lower_fn),
+        upper = list(continuous = upper_fn))
+```
+
+#### VIF
+
+```{r}
+vif(predLayers)
+```
+
+# Modellering
+
+## Torsk
+
+PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM
+
+### PA (Biomod)
+
+###### Formaterar data
+
+```{r}
+myResp <- speciesPA$`Gadus morhua`
+myRespName <- 'Gadus morhua'
+myExpl <- terra::rast(predStack)
+myRespXY <- master |> dplyr::select(ShootLong, ShootLat)
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName)
+```
+
+### Abundans (SDM)
+
+###### Datahantering
+
+```{r}
+sp1 <- as.data.frame(t(gsub(" ", "", species)))
+names(sp1) <- species
+sp <- tibble(sp1)[,1]
+timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022),
+                     "Alla år" = c(1972, 2022))
+quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+master <- master |>
+  mutate(Gadusmorhua = `Gadus morhua` / sweptAreaDS_km2) |>
+  filter(Gadusmorhua > 1)
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE)
+
+```
+
+<!-- ## Rödspätta -->
+
+<!-- PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM -->
+
+<!-- ### PA (Biomod) -->
+
+<!-- ###### Formaterar data -->
+
+<!-- ```{r} -->
+
+<!-- myResp <- speciesPA$`Pleuronectes platessa`  # Hårdkod -->
+
+<!-- myRespName <- 'Pleuronectes platessa' -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName) -->
+
+<!-- ``` -->
+
+<!-- ### Abundans (SDM) -->
+
+<!-- ###### Datahantering -->
+
+<!-- ```{r} -->
+
+<!-- sp <- tibble(sp1)[,2] -->
+
+<!-- timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022), -->
+
+<!--                      "Alla år" = c(1972, 2022)) -->
+
+<!-- quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4) -->
+
+<!-- master <- master |> -->
+
+<!--   mutate(Pleuronectesplatessa = `Pleuronectes platessa` / sweptAreaDS_km2) |> -->
+
+<!--   filter(Pleuronectesplatessa > 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE) -->
+
+<!-- ``` -->
+
+## Sandskädda
+
+PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM
+
+### PA (Biomod)
+
+###### Formaterar data
+
+```{r}
+myResp <- speciesPA$`Limanda limanda`  # Hårdkod
+myRespName <- 'Limanda limanda'
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName)
+```
+
+### Abundans (SDM)
+
+###### Datahantering
+
+```{r}
+sp <- tibble(sp1)[,6]
+timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022),
+                     "Alla år" = c(1972, 2022))
+quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+master <- master |>
+  mutate(Limandalimanda = `Limanda limanda` / sweptAreaDS_km2) |>
+  filter(Limandalimanda > 1)
+
+```
+
+```{r}
+#| output: asis
+
+tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE),
+         error = function(e){})
+```
+
+<!-- ## Vitling -->
+
+<!-- PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM -->
+
+<!-- ### PA (Biomod) -->
+
+<!-- ###### Formaterar data -->
+
+<!-- ```{r} -->
+
+<!-- myResp <- speciesPA$`Merlangius merlangus`  # Hårdkod -->
+
+<!-- myRespName <- 'Merlangius merlangus' -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName) -->
+
+<!-- ``` -->
+
+<!-- ### Abundans (SDM) -->
+
+<!-- ###### Datahantering -->
+
+<!-- ```{r} -->
+
+<!-- sp <- tibble(sp1)[,5] -->
+
+<!-- timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022), -->
+
+<!--                      "Alla år" = c(1972, 2022)) -->
+
+<!-- quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4) -->
+
+<!-- master <- master |> -->
+
+<!--   mutate(Merlangiusmerlangus = `Merlangius merlangus` / sweptAreaDS_km2) |> -->
+
+<!--   filter(Merlangiusmerlangus > 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE), -->
+
+<!--          error = function(e){}) -->
+
+<!-- ``` -->
+
+## Skrubbskädda
+
+PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM
+
+### PA (Biomod)
+
+###### Formaterar data
+
+```{r}
+myResp <- speciesPA$`Platichthys flesus`  # Hårdkod
+myRespName <- 'Platichthys flesus'
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName)
+```
+
+### Abundans (SDM)
+
+###### Datahantering
+
+```{r}
+sp <- tibble(sp1)[,10]
+timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022),
+                     "Alla år" = c(1972, 2022))
+quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+master <- master |>
+  mutate(Platichthysflesus = `Platichthys flesus` / sweptAreaDS_km2) |>
+  filter(Platichthysflesus > 1)
+
+```
+
+```{r}
+#| output: asis
+
+tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE),
+         error = function(e){})
+
+```
+
+## Lerskädda
+
+PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM
+
+### PA (Biomod)
+
+###### Formaterar data
+
+```{r}
+myResp <- speciesPA$`Hippoglossoides platessoides`  # Hårdkod
+myRespName <- 'Hippoglossoides platessoides'
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName)
+```
+
+### Abundans (SDM)
+
+###### Datahantering
+
+```{r}
+sp <- tibble(sp1)[,8]
+timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022),
+                     "Alla år" = c(1972, 2022))
+quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+master <- master |>
+  mutate(Hippoglossoidesplatessoides = `Hippoglossoides platessoides` / sweptAreaDS_km2) |>
+  filter(Hippoglossoidesplatessoides > 1)
+
+```
+
+```{r}
+#| output: asis
+
+tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE),
+         error = function(e){})
+
+```
+
+## Knorrhane
+
+PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM
+
+### PA (Biomod)
+
+###### Formaterar data
+
+```{r}
+myResp <- speciesPA$`Eutrigla gurnardus`  # Hårdkod
+myRespName <- 'Eutrigla gurnardus'
+```
+
+```{r}
+#| output: asis
+
+modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName)
+```
+
+### Abundans (SDM)
+
+###### Datahantering
+
+```{r}
+sp <- tibble(sp1)[,9]
+timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022),
+                     "Alla år" = c(1972, 2022))
+quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+master <- master |>
+  mutate(Eutriglagurnardus = `Eutrigla gurnardus` / sweptAreaDS_km2) |>
+  filter(Eutriglagurnardus > 1)
+
+```
+
+```{r}
+#| output: asis
+
+tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE),
+         error = function(e){})
+
+```
+
+<!-- ## Kummel -->
+
+<!-- PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM -->
+
+<!-- ### PA (Biomod) -->
+
+<!-- ###### Formaterar data -->
+
+<!-- ```{r} -->
+
+<!-- myResp <- speciesPA$`Merluccius merluccius`  # Hårdkod -->
+
+<!-- myRespName <- 'Merluccius merluccius' -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName) -->
+
+<!-- ``` -->
+
+<!-- ### Abundans (SDM) -->
+
+<!-- ###### Datahantering -->
+
+<!-- ```{r} -->
+
+<!-- sp <- tibble(sp1)[,4] -->
+
+<!-- timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022), -->
+
+<!--                      "Alla år" = c(1972, 2022)) -->
+
+<!-- quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4) -->
+
+<!-- master <- master |> -->
+
+<!--   mutate(Merlucciusmerluccius = `Merluccius merluccius` / sweptAreaDS_km2) |> -->
+
+<!--   filter(Merlucciusmerluccius > 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE), -->
+
+<!--          error = function(e){}) -->
+
+<!-- ``` -->
+
+<!-- ## Bergtunga -->
+
+<!-- PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM -->
+
+<!-- ### PA (Biomod) -->
+
+<!-- ###### Formaterar data -->
+
+<!-- ```{r} -->
+
+<!-- myResp <- speciesPA$`Microstomus kitt`  # Hårdkod -->
+
+<!-- myRespName <- 'Microstomus kitt' -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName) -->
+
+<!-- ``` -->
+
+<!-- ### Abundans (SDM) -->
+
+<!-- ###### Datahantering -->
+
+<!-- ```{r} -->
+
+<!-- sp <- tibble(sp1)[,3] -->
+
+<!-- timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022), -->
+
+<!--                      "Alla år" = c(1972, 2022)) -->
+
+<!-- quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4) -->
+
+<!-- master <- master |> -->
+
+<!--   mutate(Microstomuskitt = `Microstomus kitt` / sweptAreaDS_km2) |> -->
+
+<!--   filter(Microstomuskitt > 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE), -->
+
+<!--          error = function(e){}) -->
+
+<!-- ``` -->
+
+<!-- ## Sjötunga -->
+
+<!-- PA-model mde Biomod2 för att begränsa område, därefter abundansmodell med SDM -->
+
+<!-- ### PA (Biomod) -->
+
+<!-- ###### Formaterar data -->
+
+<!-- ```{r} -->
+
+<!-- myResp <- speciesPA$`Solea solea`  # Hårdkod -->
+
+<!-- myRespName <- 'Solea solea' -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- modQuartoFuncBiomod(myResp, myExpl, myRespXY, myRespName) -->
+
+<!-- ``` -->
+
+<!-- ### Abundans (SDM) -->
+
+<!-- ###### Datahantering -->
+
+<!-- ```{r} -->
+
+<!-- sp <- tibble(sp1)[,7] -->
+
+<!-- timePeriod <- tibble(#"1972-2004" = c(1972, 2004), "2005-2022" = c(2005, 2022), -->
+
+<!--                      "Alla år" = c(1972, 2022)) -->
+
+<!-- quarter <- tibble("Helår" = c(1,2,3,4))#, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4) -->
+
+<!-- master <- master |> -->
+
+<!--   mutate(Soleasolea = `Solea solea` / sweptAreaDS_km2) |> -->
+
+<!--   filter(Soleasolea > 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| output: asis -->
+
+<!-- tryCatch(modQuartoFuncSDM(master, sp, timePeriod, quarter, stack(predStackDelta[[-4]]), FALSE), -->
+
+<!--          error = function(e){}) -->
+
+<!-- ``` -->

@@ -1,0 +1,318 @@
+---
+title: "SDM report"
+author: "Mårten Erlandsson"
+date: 2024-03-19
+date-format: iso
+format: 
+  html:
+    code-tools: false
+    self-contained: true
+    smooth-scroll: true
+    code-fold: false
+    page-layout: full
+    toc: true
+    toc-depth: 4
+    toc-title: Innehåll
+    toc-location: left
+    number-sections: true
+    number-depth: 4
+    highlight-style: github
+    css: custom.css
+execute:
+  warning: false
+  echo: false
+---
+
+```{r Loading data}
+# Load pakages
+# library(rio) # Importera data
+library(dplyr) # Data handling
+library(tidyr) # Data handling
+library(ggplot2) # Graphs
+library(DT) # Tables
+library(leaflet) # Interactive map
+# library(leaflet.extras) # Extra 
+library(grid) # multigraphs
+library(usdm) # VIF
+library(GGally) # Correlation plot
+# library(sdmpredictors) # Test-prediktorer
+library(sf) # Shape handling
+library(raster) # Raster handling
+library(terra) # Raster handling
+# library(mgcv) # GAM-modellering
+# library(gratia) # Gam visualisering
+library(sdm) # Abundance ensemble modeling
+library(biomod2) # Ensemble modeling PA
+library(SLUcolors) # Color scheme from SLU
+library(aqua) # Home made functions for map visualization
+library(crosstalk) # Interactiv functions
+library(reactable) # Tabeller
+library(htmltools) # HTML tools
+library(rnaturalearth) # Background maps
+
+# Load helper functions
+source("report_functions.r")
+
+# Load data
+df <- readRDS("../data/master_240311.rds") # The prepared data with catches and predictor values for each sample point
+predStack <- readRDS("../data/predStack_20240118.rds") # Raster stack of all predictor variables
+
+# Model parameters
+timePeriod <- tibble("2005_2022" = c(2005, 2022),  "1972_2004" = c(1972, 2004)) 
+quarter <- list("All" = c(1,2,3,4), "Q1" = 1) 
+modelID <- "20240516"
+
+# Load species from the model output folder
+# species <- dir(paste0("../model output/", modelID, "/PA"))
+species <- c("smallspottedCatshark" = "Scyliorhinus canicula", "thornbackRay" = "Raja clavata",
+             "spinyDogfish" = "Squalus acanthias", "ThornySkate" = "Amblyraja radiata")
+# Load model predictors from the first model
+myBiomodModelOut <- 
+  get(load(
+    paste0("../model output/", modelID, "/PA/", names(species)[1], "/", names(species)[1], ".", 
+           names(species)[1], "_", names(timePeriod)[1], "_", names(quarter)[1], ".models.out")
+  ))
+predictors <- myBiomodModelOut@expl.var.names
+```
+
+# Dataset
+
+The models are based on trawling data on the west coast
+
+There are three data sources; IBTS, BITS and NATS
+
+# Trawl surveys
+
+Information about the trawl surveys...
+
+```{r Trawl surveys}
+#| output: asis
+cat("\n::: panel-tabset\n")
+cat("\n#### Trawl surveys per year \n")
+
+cat("\n::: panel-tabset\n")
+for(survey in c("Total", "BITS", "IBTS", "NATS")){
+  cat("\n#####", survey," \n")
+  trawlPerYear(df, survey)
+}
+cat("\n:::\n")
+
+cat("\n#### Trawl surveys per month \n")
+yearTable <- df |>
+  dplyr::select(Year, Month) |>
+  group_by(Year, Month) |>
+  summarise(n = n()) |>
+  spread("Month", "n", fill = 0) |> as.data.frame()
+rownames(yearTable) <- yearTable$Year
+
+brks <- quantile(c(1, seq(5, 50, 5)), probs = seq(.1, .9, .1), na.rm = TRUE)
+ramp <- colorRampPalette(SLUcolors::SLUpalette("red")[5:3])
+clrs <- ramp(length(brks) + 1)
+
+DT::datatable(yearTable[, -1],
+              options = list(
+                dom = 't',
+                pageLength = nrow(yearTable),
+                scrollX = TRUE,
+                scrollY = '300px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              )
+) |>
+  DT::formatStyle(0, target = 'row', backgroundColor = "white",
+                  lineHeight = '30%', fontSize = '50%') |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleInterval(brks, clrs)) |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleEqual(0, 'white'))
+cat("\n:::\n")
+```
+
+# Catches
+
+```{r Catches}
+#| output: asis
+#| panel: tabset
+
+# Preparing a data.frame of for mapping
+spMap <- dplyr::select(df, Year, Month, Quarter, Depth, source.x, ShootLat, ShootLong, !!!syms(species), !!!syms(predictors))
+spMapPA <- spMap[, names(species)] %>% mutate_all(~ +(.x > 0))
+names(spMapPA) <- paste0(names(spMapPA), "_PA")
+
+cat("\n#### Interactive data \n")
+# Create a data object that can be interactively changed between multiple input components
+sharedSpMap <- SharedData$new(cbind(spMap, spMapPA))
+
+cat("\n::: panel-tabset\n")
+cat("\n#### Map \n")
+# Creating an interface and components for the interactivity
+bscols(widths = c(3, 3, 6),
+        htmltools::div(
+          style = "margin-left: 20px;",
+          list(
+            filter_checkbox("Quarter", "Quarter", sharedSpMap, ~Quarter, inline = TRUE),
+            filter_checkbox("source.x", "Datakälla", sharedSpMap, ~source.x, inline = T),
+            filter_slider("Year", "År", sharedSpMap, ~Year, width = "100%", round = T),
+            filter_slider("Month", "Månad", sharedSpMap, ~Month, width = "100%", round = T),
+            # Loop creation of species checkboxes
+            eval(parse(
+              text = paste0("list(",
+                            paste0("filter_checkbox('", names(species), "', '", names(species), "', sharedSpMap, '",
+                                   names(species), "_PA', inline = TRUE)", collapse = ", "
+                            ),
+                            ")"
+              )
+            ))
+          )
+        ),
+       htmltools::div(
+         # Loop creation of predictor sliders
+         eval(parse(
+           text = paste0("list(",
+                         paste0("filter_slider('", predictors, "', '", predictors, "', sharedSpMap, '",
+                                predictors, "', round = T)", collapse = ", "
+                         ),
+                         ")"
+           )
+         ))
+       ),
+       # Create an interactive map
+       leaflet(data = sharedSpMap, height = 600) |>
+         addProviderTiles(providers$CartoDB.Positron) |>
+         addCircleMarkers(~ShootLong, ~ShootLat, spMap[, 1], weight = 0.5, radius = 3, color = "black", fillColor = "red")
+)
+
+cat("\n#### Table \n")
+# Create an interactive table
+reactable(sharedSpMap, defaultColDef = colDef(format = colFormat(digits = 2)))
+cat("\n:::\n")
+
+cat("\n#### Catches per species \n")
+dat <- df |>
+  dplyr::select(Year, Quarter, sweptAreaDS_km2, !!!syms(species)) |>
+  gather(sp, nr, !!!syms(names(species))) |>
+  group_by(Year, Quarter, sp) |>
+  summarise(sweptArea = sum(sweptAreaDS_km2), Number = sum(nr)) |>
+  mutate(nrPerSweptArea = Number/sweptArea)
+
+cat("::: panel-tabset\n")
+for(sp in names(species)){
+  cat("\n#####", sp," \n")
+  plotYear(dat, sp)
+}
+cat("\n:::\n")
+cat("\n#### Trawl map \n")
+europe <- ne_countries(continent = "europe", returnclass = "sf", scale = "large")
+ggplot() +
+  geom_sf(data = europe) +
+  geom_point(dplyr::filter(spMap, Year > 2004), mapping = aes(x = ShootLong, y = ShootLat), alpha = 0.05) +
+  coord_sf(xlim = c(9.5,13.5), ylim = c(55,59.5)) +
+  xlab("Longitude") + ylab("Latitude")
+```
+
+<!-- # Predictors -->
+<!-- ::: panel-tabset -->
+<!-- ## Correlation graph -->
+<!-- ```{r Correlation graph} -->
+<!-- predLayers <- df[, predictors] -->
+<!-- ggpairs(predLayers, -->
+<!--         lower = list(continuous = lower_fn), -->
+<!--         upper = list(continuous = upper_fn)) -->
+<!-- ``` -->
+
+<!-- ## VIF -->
+<!-- ```{r VIF} -->
+<!-- # Calculate the variance inflation factor -->
+<!-- vif(predLayers) -->
+<!-- ``` -->
+
+<!-- ## Maps -->
+<!-- ```{r Predictor maps} -->
+<!-- #| output: asis -->
+
+<!-- cat("\n::: panel-tabset  \n") -->
+<!-- for(pred in predictors){ -->
+<!--   cat("\n#####", pred," \n") -->
+<!--   predStack[[pred]] |> plot() -->
+<!-- } -->
+<!-- cat("\n:::\n") -->
+<!-- ``` -->
+<!-- ::: -->
+
+<!-- # Presence / Absence models (Biomod2) -->
+<!-- ```{r PA models} -->
+<!-- #| output: asis -->
+<!-- modQuartoFuncBiomod_pre(modelID, names(species), timePeriod, quarter) -->
+<!-- ``` -->
+
+<!-- # Abundansmodell (SDM) -->
+
+```{r Abundansmodellering}
+#| output: asis
+dfAbu <- dplyr::select(df, Year, Quarter, ShootLong, ShootLat, sweptAreaDS_km2, all_of(species)) |>
+  mutate(across(names(species), ~ as.integer(.x / sweptAreaDS_km2)))
+# modQuartoFuncSDM_pre(modelID, names(species), timePeriod, quarter, dfAbu)
+```
+
+# Validering
+
+```{r Validering}
+#| panel: tabset
+#| output: asis
+
+RT <- reportTables(modelID, species, timePeriod, quarter, df, dfAbu)
+cat(paste("\n#### Förekomst \n"))
+DT::datatable(RT[[1]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(c(3, 5, 6), digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Abundans \n"))
+DT::datatable(RT[[2]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(3:10, digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Delta \n"))
+DT::datatable(RT[[3]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(3:6, digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Variable Importance - Förekomst \n"))
+DT::datatable(RT[[4]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ))|>
+  DT::formatRound(1:7, digits = 2, interval = 3, mark = " ")
+
+```

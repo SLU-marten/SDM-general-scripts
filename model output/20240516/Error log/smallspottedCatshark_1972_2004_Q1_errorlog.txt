@@ -1,0 +1,2 @@
+"x"
+"1" "<simpleError: [weighted.mean] all weights must be positive values>"

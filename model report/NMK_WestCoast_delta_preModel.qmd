@@ -1,0 +1,554 @@
+---
+title: "Utbredning av fisk på Västkusten"
+author: "Mårten Erlandsson"
+date: 2024-03-19
+date-format: iso
+format: 
+  html:
+    code-tools: false
+    self-contained: true
+    smooth-scroll: true
+    code-fold: false
+    page-layout: full
+    toc: true
+    toc-depth: 4
+    toc-title: Innehåll
+    toc-location: left
+    number-sections: true
+    number-depth: 4
+    highlight-style: github
+    css: custom.css
+execute: 
+  warning: false
+  echo: false
+---
+
+# Dataset
+
+Modellerna är baserad på tråldata från västkusten. Tråldatat kommer från tre olika datakällor: IBTS, BITS och NATS.
+
+För varje art skapas för en förekomstmodell för att beräkna artens utbredningsområde. Därefter beräknas en abundansmodell inom det området.
+
+<!-- ###### Laddar in R-paket -->
+
+```{r R-Paket}
+library(rio) # Importera data
+library(dplyr) # Datahantering
+library(tidyr) # Datahantering
+library(ggplot2) # Grafer
+library(DT) # Tabeller
+library(leaflet) # Interaktiv karta
+library(leaflet.extras)
+library(grid) # Grafer
+library(usdm) # VIF
+library(GGally) # Korrelationsplot
+library(sdmpredictors) # Test-prediktorer
+library(sf) # Shape-hantering
+library(raster) # Rasterhantering
+library(terra) # Rasterhantering
+library(mgcv) # GAM-modellering
+library(gratia) # Gam visualisering
+library(sdm) # Ensemblemodellering med abundans
+library(biomod2) # Ensemblemodellering PA
+library(alphahull) 
+library(SLUcolors) # SLU-färger i grafer och kartor
+library(aqua) # Egna funktioner för kartvisualisering
+library(crosstalk) # interaktivt dokument
+library(reactable) # Tabeller
+
+source("NMK_WestCoast_modFunc.r")
+```
+
+```{r Dataimport}
+#| message: false
+#| output: false
+
+master <- readRDS("R/helpFiles/master_240311.rds")
+predStack <- readRDS("R/helpFiles/predStack_20240118.rds")[[-c(3:4)]]
+
+predStack[["bTemp"]] <- reclassify(predStack[["bTemp"]], cbind(-Inf, min(master$bTemp), min(master$bTemp)), right=FALSE)
+predStack[["bTemp"]] <- reclassify(predStack[["bTemp"]], cbind(max(master$bTemp), Inf, max(master$bTemp)), right=FALSE)
+predStack[["bSal"]] <- reclassify(predStack[["bSal"]], cbind(-Inf, min(master$bSal), min(master$bSal)), right=FALSE)
+predStack[["bSal"]] <- reclassify(predStack[["bSal"]], cbind(max(master$bSal), Inf, max(master$bSal)), right=FALSE)
+predStack[["Depth"]] <- reclassify(predStack[["Depth"]], cbind(-Inf, min(master$Depth), min(master$Depth)), right=FALSE)
+predStack[["Depth"]] <- reclassify(predStack[["Depth"]], cbind(max(master$Depth), Inf, max(master$Depth)), right=FALSE)
+predStack[["botCur"]] <- reclassify(predStack[["botCur"]], cbind(-Inf, min(master$botCur), min(master$botCur)), right=FALSE)
+predStack[["botCur"]] <- reclassify(predStack[["botCur"]], cbind(max(master$botCur), Inf, max(master$botCur)), right=FALSE)
+predStack[["slope"]] <- reclassify(predStack[["slope"]], cbind(-Inf, min(master$slope), min(master$slope)), right=FALSE)
+predStack[["slope"]] <- reclassify(predStack[["slope"]], cbind(max(master$slope), Inf, max(master$slope)), right=FALSE)
+predStack[["fishInt"]] <- reclassify(predStack[["fishInt"]], cbind(-Inf, min(master$fishInt), min(master$fishInt)), right=FALSE)
+predStack[["fishInt"]] <- reclassify(predStack[["fishInt"]], cbind(max(master$fishInt), Inf, max(master$fishInt)), right=FALSE)
+predStack[["maxT"]] <- reclassify(predStack[["maxT"]], cbind(-Inf, min(master$maxT), min(master$maxT)), right=FALSE)
+predStack[["maxT"]] <- reclassify(predStack[["maxT"]], cbind(max(master$maxT), Inf, max(master$maxT)), right=FALSE)
+
+predictors <- c("bTemp", 
+                "bSal",
+                "Depth",
+                "botCur",
+                "slope",
+                "fishInt",
+                "maxT"
+                #"minT",
+                # "diffT"
+                #"meanOver16T",
+                #"secchi",
+                # "PAR"
+)
+
+predLayers <- master[, predictors]
+
+ibts_hl <- import("indata/raw/ibts_hl_to_klab_20220601.csv") |> mutate(source = "IBTS")
+nats_hl <- import("indata/raw/nats_hl_to_klab_20230215.csv") |> mutate(source = "NATS")
+bits_hl <- import("indata/raw/bits_hl_to_klab_20230214.csv") |> mutate(source = "BITS")
+
+tot_hl <- rbind(nats_hl, ibts_hl, bits_hl) |> 
+  mutate(year = as.numeric(substr(haul.id, 1, 4)))
+
+tot_hl_wide <- tot_hl |> 
+  dplyr::filter(LngtCm > 20) |>
+  group_by(haul.id, Species, source) |> 
+  summarise(number = sum(Number)) |> 
+  spread(Species, number, fill = 0)
+```
+
+<!-- ###### Importerar och strukturerar data -->
+
+```{r Databehandling}
+#| eval: false
+
+ibts_hh <- import("indata/raw/ibts_hh_to_klab_20220601.csv") |> mutate(source = "IBTS")
+ibts_hl <- import("indata/raw/ibts_hl_to_klab_20220601.csv") |> mutate(source = "IBTS")
+nats_hh <- import("indata/raw/nats_hh_to_klab_20230215.csv") |> mutate(source = "NATS")
+nats_hl <- import("indata/raw/nats_hl_to_klab_20230215.csv") |> mutate(source = "NATS")
+bits_hh <- import("indata/raw/bits_hh_to_klab_20230214.csv") |> mutate(source = "BITS")
+bits_hl <- import("indata/raw/bits_hl_to_klab_20230214.csv") |> mutate(source = "BITS")
+
+tot_hh <- rbind(nats_hh, ibts_hh, bits_hh) |>
+  dplyr::select(haul.id, Survey, Quarter, Year, Month, Day, ShootLat, ShootLong, Depth, sweptAreaDS_km2, source)
+
+tot_hl <- rbind(nats_hl, ibts_hl, bits_hl) |>
+  mutate(year = as.numeric(substr(haul.id, 1, 4)))
+
+tot_hl_wide <- tot_hl |>
+  dplyr::filter(LngtCm > 20) |>
+  group_by(haul.id, Species, source) |>
+  summarise(number = sum(Number)) |>
+  spread(Species, number, fill = 0)
+
+master <- merge(tot_hh, tot_hl_wide, by = "haul.id", all.x = T) |> na.omit()
+```
+
+# Trålningar
+
+
+```{r Trålningar}
+#| output: asis
+
+trawlPerYear <- function(source = NULL){
+  if(!is.null(source)){
+    dat1 <- master |> filter(source.x == source)
+  }
+  else{
+    dat1 <- master
+  }
+  dat <- dat1 |>
+    group_by(Year, Quarter) |>
+    summarise("Number of hauls" = n())
+  theme_set(theme_classic())
+  p <- ggplot(dat, aes(x = Year, y = `Number of hauls`,
+                  fill = factor(Quarter, levels = c(4,3,2,1)))) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values=c("#56b4e9", "#009e73", "#f0e442", "#0072b2")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    guides(fill=guide_legend(title="Quarter"))
+  grid.newpage()
+  grid.draw(ggplotGrob(p))
+}
+cat("\n::: panel-tabset\n")
+cat("\n#### Trålningar per år \n")
+
+cat("\n::: panel-tabset\n")
+for(i in c("Totalt", "BITS", "IBTS", "NATS")){
+  cat("\n#####", i," \n")
+  if(i == "Totalt"){
+    i <- NULL
+  }
+  trawlPerYear(i)
+}
+cat("\n:::\n")
+
+cat("\n#### Trålningar per månad \n")
+yearTable <- master |>
+  dplyr::select(Year, Month) |>
+  group_by(Year, Month) |>
+  summarise(n = n()) |>
+  spread("Month", "n", fill = 0) |> as.data.frame()
+rownames(yearTable) <- yearTable$Year
+
+brks <- quantile(c(1, seq(5, 50, 5)), probs = seq(.1, .9, .1), na.rm = TRUE)
+ramp <- colorRampPalette(SLUcolors::SLUpalette("red")[5:3])
+clrs <- ramp(length(brks)+1)
+
+DT::datatable(yearTable[,-1],
+              options = list(
+                dom = 't',
+                pageLength = nrow(yearTable),
+                scrollX = TRUE,
+                scrollY = '300px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              )
+) |>
+  DT::formatStyle(0, target = 'row', backgroundColor = "white",
+                  lineHeight = '30%', fontSize = '50%') |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleInterval(brks, clrs)) |>
+  DT::formatStyle(1:12, backgroundColor = DT::styleEqual(0, 'white'))
+cat("\n:::\n")
+
+```
+
+# Fångster
+
+```{r Fångster}
+#| output: asis
+#| panel: tabset
+
+species <- c(
+# ## Plattfiskar
+"Rodspatta" = "Pleuronectes platessa",
+"Bergskadda" = "Microstomus kitt",
+"Sandskadda" = "Limanda limanda",
+"Tunga" = "Solea solea",
+"Lerskadda" = "Hippoglossoides platessoides",
+"Skrubbskadda" = "Platichthys flesus",
+"Rodtunga" = "Glyptocephalus cynoglossus",
+"Slatvar" = "Scophthalmus rhombus",
+"Piggvar" = "Scophthalmus maximus",
+
+  # Torskfiskar
+  "Torsk" = "Gadus morhua",
+  "Kummel" = "Merluccius merluccius",
+  "Vitling" =  "Merlangius merlangus",
+  "Kolja" = "Melanogrammus aeglefinus",
+  "Grasej" =  "Pollachius virens",
+  "Lyrtorsk" = "Pollachius pollachius",
+  "Langa" = "Molva molva",
+  "Kolmule" = "Micromesistius poutassou",
+  "Fyrtommad skarlanga" = "Enchelyopus cimbrius",
+
+  # # Övriga
+  "Knot" = "Eutrigla gurnardus",
+  "Sill" =  "Clupea harengus",
+  "Sjurygg" = "Cyclopterus lumpus",
+  "Fjarsing" = "Trachinus draco",
+  "Makrill" = "Scomber scombrus",
+  "Vahls albrosme" = "Lycodes vahlii",
+  "Marulk" = "Lophius piscatorius",
+  "Havskatt" = "Anarhichas lupus",
+  "Nordkalmar" = "Loligo forbesii",
+  "Fenknot" = "Chelidonichthys lucerna",
+  "Havsmus" =  "Chimaera monstrosa",
+
+  # # Hajar och rockor
+  "Smaflackig rodhaj" = "Scyliorhinus canicula",
+  "Knaggrocka" = "Raja clavata",
+  "Pigghaj" = "Squalus acanthias",
+  "Klorocka" = "Amblyraja radiata"
+)
+
+speciesPA <- master |> dplyr::select(all_of(species))
+speciesPA[speciesPA>0] <- 1
+
+
+spMap <- master |>
+  dplyr::select(Year, Month, Quarter, Depth, source.x, ShootLat, ShootLong, !!!syms(species), !!!syms(predictors))
+
+trawl_area <- st_read("indata/gis/trawl_area.shp", quiet = T)
+
+cat("\n#### Provfiskekarta \n")
+spMapPA <- spMap[,8:(8 + length(names(species)))] %>% mutate_all(~ +(.x > 0))
+names(spMapPA) <- paste0(names(spMapPA), "_")
+sharedSpMap <- SharedData$new(cbind(spMap, spMapPA))
+# sharedSpMap <- SharedData$new(spMap)
+
+cat("\n::: panel-tabset\n")
+cat("\n#### Karta \n")
+bscols(widths = c(3, 3, 6),
+        htmltools::div(
+          style = "margin-left: 20px;",
+          list(
+            # filter_checkbox("Quarter", "Quarter", sharedSpMap, ~Quarter, inline = TRUE),
+            # filter_checkbox("source.x", "Datakälla", sharedSpMap, ~source.x, inline = T),
+            # filter_slider("Year", "År", sharedSpMap, ~Year, width = "100%", round = T),
+            # filter_slider("Month", "Månad", sharedSpMap, ~Month, width = "100%", round = T),
+            
+            filter_checkbox("Rodspatta", "Rödspätta",  sharedSpMap, ~Rodspatta_, inline = TRUE),
+            filter_checkbox("Bergskadda", "Bergskädda",  sharedSpMap, ~Bergskadda_, inline = T),
+            filter_checkbox("Sandskadda", "Sandskädda",  sharedSpMap, ~Sandskadda_, inline = T),
+            filter_checkbox("Tunga", "Tunga",  sharedSpMap, ~Tunga_, inline = T),
+            filter_checkbox("Lerskadda", "Lerskädda",  sharedSpMap, ~Lerskadda_, inline = T),
+            filter_checkbox("Skrubbskadda", "Skrubbskädda",  sharedSpMap, ~Skrubbskadda_, inline = T),
+            filter_checkbox("Rodtunga", "Rödtunga",  sharedSpMap, ~Rodtunga_, inline = T),
+            filter_checkbox("Slatvar", "Slätvar",  sharedSpMap, ~Slatvar_, inline = T),
+            filter_checkbox("Piggvar", "Piggvar",  sharedSpMap, ~Piggvar_, inline = T),
+
+            filter_checkbox("Torsk", "Torsk",  sharedSpMap, ~Torsk_, inline = TRUE),
+            filter_checkbox("Kummel", "Kummel",  sharedSpMap, ~Kummel_, inline = TRUE),
+            filter_checkbox("Vitling", "Vitling",  sharedSpMap, ~Vitling_, inline = TRUE),
+            filter_checkbox("Kolja", "Kolja",  sharedSpMap, ~Kolja_, inline = TRUE),
+            filter_checkbox("Grasej", "Gråsej",  sharedSpMap, ~Grasej_, inline = TRUE),
+            filter_checkbox("Lyrtorsk", "Lyrtorsk",  sharedSpMap, ~Lyrtorsk_, inline = TRUE),
+            filter_checkbox("Langa", "Långa",  sharedSpMap, ~Langa_, inline = TRUE),
+            filter_checkbox("Kolmule", "Kolmule",  sharedSpMap, ~Kolmule_, inline = TRUE),
+            filter_checkbox("Fyrtommad skarlanga", "Fyrtommad skärlånga",  sharedSpMap, ~`Fyrtommad skarlanga_`, inline = TRUE),
+
+            filter_checkbox("Knot", "Knot",  sharedSpMap, ~Knot_, inline = TRUE),
+            filter_checkbox("Sill", "Sill",  sharedSpMap, ~Sill_, inline = TRUE),
+            filter_checkbox("Sjurygg", "Sjurygg",  sharedSpMap, ~Sjurygg_, inline = TRUE),
+            filter_checkbox("Fjarsing", "Fjärsing",  sharedSpMap, ~Fjarsing_, inline = TRUE),
+            filter_checkbox("Makrill", "Makrill",  sharedSpMap, ~Makrill_, inline = TRUE),
+            filter_checkbox("Vahls albrosme", "Vahls ålbrosme",  sharedSpMap, ~`Vahls albrosme_`, inline = TRUE),
+            filter_checkbox("Marulk", "Marulk",  sharedSpMap, ~Marulk_, inline = TRUE),
+            filter_checkbox("Havskatt", "Havskatt",  sharedSpMap, ~Havskatt_, inline = TRUE),
+            filter_checkbox("Nordkalmar", "Nordkalmar",  sharedSpMap, ~Nordkalmar_, inline = TRUE),
+            filter_checkbox("Fenknot", "Fenknot",  sharedSpMap, ~Fenknot_, inline = TRUE),
+            filter_checkbox("Havsmus", "Havsmus",  sharedSpMap, ~Havsmus_, inline = TRUE),
+
+            filter_checkbox("Smaflackig rodhaj", "Småfläckig rödhaj",  sharedSpMap, ~`Smaflackig rodhaj_`, inline = TRUE),
+            filter_checkbox("Knaggrocka", "Knaggrocka",  sharedSpMap, ~Knaggrocka_, inline = TRUE),
+            filter_checkbox("Pigghaj", "Pigghaj",  sharedSpMap, ~Pigghaj_, inline = TRUE),
+            filter_checkbox("Klorocka", "Klorocka",  sharedSpMap, ~Klorocka_, inline = TRUE)
+          )
+        ),
+       htmltools::div(
+         list(
+           filter_slider("Year", "År", sharedSpMap, ~Year, width = "100%", round = T),
+           filter_slider("Month", "Månad", sharedSpMap, ~Month, width = "100%", round = T),
+           filter_checkbox("source.x", "Datakälla", sharedSpMap, ~source.x, inline = T),
+           filter_slider("Depth", "Djup", sharedSpMap, ~Depth, width = "100%", round = T),
+           filter_slider("bSal", "Bottensalinitet", sharedSpMap, ~bSal, width = "100%", round = T),
+           filter_slider("botCur", "Bottenströmmar", sharedSpMap, ~botCur, width = "100%", round = 3),
+           filter_slider("slope", "Bottenlutning", sharedSpMap, ~slope, width = "100%", round = 3),
+           filter_slider("fishInt", "Fiskeintensitet", sharedSpMap, ~fishInt, width = "100%", round = T),
+           filter_slider("bTemp", "Bottentemperatur", sharedSpMap, ~bTemp, width = "100%", round = T),
+           filter_slider("maxT", "Maxtemperatur", sharedSpMap, ~maxT, width = "100%", round = T)
+         )
+       ),
+
+       leaflet(data = sharedSpMap, height = 600) |>  
+         addProviderTiles(providers$CartoDB.Positron) |>
+         addCircleMarkers(~ShootLong, ~ShootLat, spMap[, 1], weight = 0.5, radius = 3, color = "black", fillColor = "red")
+)
+
+cat("\n#### Tabell \n")
+reactable(sharedSpMap, defaultColDef = colDef(format = colFormat(digits = 2)))
+# datatable(sharedSpMap, extensions="Scroller", style="bootstrap", class="compact", width="100%",
+#   options=list(deferRender = TRUE, scrollY = 300, scroller = TRUE))
+cat("\n:::\n")
+
+# cat("\n#### Fångstkarta \n")
+# ll <- leaflet() |>  addProviderTiles(providers$CartoDB.Positron)
+# for(i in names(species)){
+#   sp_data <- spMap |> arrange(spMap[, i])
+#   pal <- colorNumeric(SLUcolors::SLUpalette("red"),na.color = "#FFFFFF00",
+#                       reverse = T, domain = log(sp_data[sp_data[,i]>0,i]) + 3)
+#   ll <- ll |>
+#     addCircleMarkers(~ShootLong, ~ShootLat, sp_data[,i], radius = (log(sp_data[,i]+1) + 3), color = "grey",
+#                      fillColor = ~pal(log(sp_data[,i]) + 3), label = ~round(sp_data[,i],0),
+#                      opacity = 0.5, fillOpacity = 0.8, weight = 1, data = sp_data, group = i
+#     )
+# }
+# ll |>
+#   addLayersControl(baseGroups = names(species), options = layersControlOptions(collapsed = FALSE)) |>
+#   hideGroup(names(species)[-1])
+
+# cat("\n#### Tabell \n")
+# 
+# tot_hl_20 <- tot_hl |> filter(LngtCm > 20)
+# antalTrålningar <- tot_hl_20$haul.id |> unique() |> length()
+# tot_hl_20 |> filter(year >= 2005) |> 
+#   group_by(haul.id, Species) |>
+#   summarise(Number = sum(Number)) |>
+#   group_by(Species) |>
+#   summarise(antalIndivider = round(sum(Number), 0),
+#             antalFörekomster = n(),
+#             antalNollor = antalTrålningar-n()) |>
+#   arrange(-antalIndivider) |>
+#   DT::datatable(rownames = F)
+
+cat("\n#### Fångster per år och art \n")
+dat <- master |>
+  dplyr::select(Year, Quarter, sweptAreaDS_km2, !!!syms(species)) |>
+  gather(sp, nr, !!!syms(names(species))) |>
+  group_by(Year, Quarter, sp) |>
+  summarise(sweptArea =sum(sweptAreaDS_km2),
+            Number = sum(nr)) |>
+  mutate(nrPerSweptArea = Number/sweptArea)
+
+plotYear <- function(spec){
+  p1 <- ggplot(dat |> filter(sp == spec),
+               aes(x = Year, y = Number, fill = Quarter)) +
+    geom_bar(stat = "identity") +
+    guides(fill=guide_legend(title="Quarter")) +
+    theme(legend.position = c(0.1, 0.7))
+  p2 <- ggplot(dat |> filter(sp == spec),
+               aes(x = Year, y = nrPerSweptArea)) +
+    geom_bar(stat = "identity")
+  grid.newpage()
+  grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "last"))
+}
+
+cat("::: panel-tabset\n")
+for(i in names(species)){
+  cat("\n#####", i," \n")
+  plotYear(i)
+}
+cat("\n:::\n")
+
+cat("\n#### Trålkarta Rapport 2005-2022\n")
+europe <- rnaturalearth::ne_countries(continent = "europe", returnclass = "sf", scale = "large")
+
+ggplot() +
+  ggplot2::geom_sf(data = europe) +
+  geom_point(spMap |> filter(Year > 2004), mapping = aes(x = ShootLong, y = ShootLat), alpha = 0.05) +
+  coord_sf(xlim = c(9.5,13.5), ylim = c(55,59.5)) + 
+  xlab("Longitude") + ylab("Latitude") 
+```
+
+# Prediktorer
+
+::: panel-tabset
+## Korrelationsgraf
+
+```{r Korrelationsgraf}
+# Lägger till en röd smooth-line i korrelationsgrafens undre del
+lower_fn <- function(data, mapping, ...){
+  ggplot(data, mapping) +
+    geom_point() +
+    geom_smooth(fill="red", color="red")
+}
+
+# Lägger till färger i korrelationsgrafens övre del
+upper_fn <- function(data, mapping, method="p", use="pairwise", ...){
+  x <- eval_data_col(data, mapping$x)
+  y <- eval_data_col(data, mapping$y)
+  corr <- cor(x,y, method=method, use=use)
+  colFn <- colorRampPalette(c("blue", "white", "red"), interpolate="spline")
+  fill <- colFn(100)[findInterval(corr, seq(-1,1, length=100))]
+  ggally_cor(data=data, mapping=mapping, ...) +
+    theme_void() +
+    theme(panel.background = element_rect(fill=fill))
+}
+
+# Plottar korrelationsgrafen
+ggpairs(predLayers,
+        lower = list(continuous = lower_fn),
+        upper = list(continuous = upper_fn))
+```
+
+## VIF
+
+```{r VIF}
+vif(predLayers)
+```
+
+## Kartor
+
+```{r Prediktionsplot}
+#| output: asis
+
+cat("  \n::: panel-tabset  \n")
+for(i in predictors){
+  cat("\n#####", i," \n")
+  predStack[[i]] |> plot()
+}
+cat("\n:::\n")
+```
+:::
+
+```{r Formatering}
+timePeriod <- tibble("2005_2022" = c(2005, 2022)) #"Alla_år" = c(1972, 2022)), "1972_2004" = c(1972, 2004), "2005_2022" = c(2005, 2022))
+quarter <- list("Helår" = c(1,2,3,4))#, "H1" = c(1,2), "H2" = c(3,4)) #, "Q1" = 1, "Q2" = 2, "Q3" = 3, "Q4" = 4)
+# quarter <- list("S" = c(2,3), "V" = c(1,4))
+masterSDM <- cbind(master, master |> dplyr::select(all_of(species)))
+prePath <- "H:/Westcoast/Save15/"
+```
+
+# Förekomstmodell (Biomod)
+
+```{r PA-modellering}
+#| output: asis
+modQuartoFuncBiomod_pre(path = prePath, art = names(species), timePeriod, quarter)
+```
+
+# Abundansmodell (SDM)
+
+```{r Abundansmodellering}
+#| output: asis
+modQuartoFuncSDM_pre(path = prePath, art = names(species), timePeriod, quarter, data = masterSDM)
+```
+
+# Validering
+
+```{r Validering}
+#| panel: tabset
+#| output: asis
+
+RT <- rapportTabeller(species, path = prePath, timePeriod, quarter, master, data = masterSDM)
+cat(paste("\n#### Förekomst \n"))
+DT::datatable(RT[[1]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(c(3, 5, 6), digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Abundans \n"))
+DT::datatable(RT[[2]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(3:10, digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Delta \n"))
+DT::datatable(RT[[3]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ),
+              rownames = F) |>
+  DT::formatRound(3:6, digits = 2, interval = 3, mark = " ")
+
+cat(paste("\n#### Variable Importance - Förekomst \n"))
+DT::datatable(RT[[4]],
+              options = list(
+                dom = 't',
+                pageLength = 50,
+                scrollX = TRUE,
+                scrollY = '600px',
+                ordering = FALSE,
+                columnDefs = list(list(className = 'dt-center', targets = "_all"),
+                                  list(width = '10px', targets = "_all"))
+              ))|>
+  DT::formatRound(1:7, digits = 2, interval = 3, mark = " ")
+
+```
