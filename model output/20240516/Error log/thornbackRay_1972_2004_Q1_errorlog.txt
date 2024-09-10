@@ -1,2 +1,0 @@
-"x"
-"1" "<simpleError: [writeRaster] file exists. You can use 'overwrite=TRUE' to overwrite it>"
