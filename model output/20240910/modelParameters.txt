@@ -1,0 +1,9 @@
+Timeperiod: c(2005, 2022)
+Quarter: c(1, 2, 3, 4)
+nRepPA_CV: 2
+nRepPA_VI: 2
+nRepPAEns_VI: 2
+nRepAbu_SubSamp: 2
+Formula:  ~ bTemp + bSal + Depth + botCur + slope + fishInt + maxT
+Biomod modeltypes: GLM, GBM, GAM, RF, XGBOOST
+SDM modeltypes: glm, brt, rf
