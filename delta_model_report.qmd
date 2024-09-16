@@ -17,7 +17,6 @@ format:
     number-sections: true
     number-depth: 4
     highlight-style: github
-    css: custom.css
 execute:
   warning: false
   echo: false
@@ -92,7 +91,7 @@ cat("\n#### Trawl surveys per year \n")
 
 cat("\n::: panel-tabset\n")
 for(survey in c("Total", "BITS", "IBTS", "NATS")){
-  cat("\n#####", survey," \n")
+  cat("\n\n#####", survey," \n")
   trawlPerYear(df, survey)
 }
 cat("\n:::\n")
@@ -128,7 +127,6 @@ cat("\n:::\n")
 ```
 
 # Catches
-
 ```{r Catches}
 #| output: asis
 #| panel: tabset
@@ -138,12 +136,12 @@ spMap <- dplyr::select(df, Year, Month, Quarter, Depth, source.x, ShootLat, Shoo
 spMapPA <- spMap[, names(species)] %>% mutate_all(~ +(.x > 0))
 names(spMapPA) <- paste0(names(spMapPA), "_PA")
 
-cat("\n#### Interactive data \n")
+cat("\n\n#### Interactive data \n")
 # Create a data object that can be interactively changed between multiple input components
 sharedSpMap <- SharedData$new(cbind(spMap, spMapPA))
 
 cat("\n::: panel-tabset\n")
-cat("\n#### Map \n")
+cat("\n\n#### Map \n")
 # Creating an interface and components for the interactivity
 bscols(widths = c(3, 3, 6),
         htmltools::div(
@@ -181,12 +179,12 @@ bscols(widths = c(3, 3, 6),
          addCircleMarkers(~ShootLong, ~ShootLat, spMap[, 1], weight = 0.5, radius = 3, color = "black", fillColor = "red")
 )
 
-cat("\n#### Table \n")
+cat("\n\n#### Table \n")
 # Create an interactive table
 reactable(sharedSpMap, defaultColDef = colDef(format = colFormat(digits = 2)))
 cat("\n:::\n")
 
-cat("\n#### Catches per species \n")
+cat("\n\n#### Catches per species \n")
 dat <- df |>
   dplyr::select(Year, Quarter, sweptAreaDS_km2, !!!syms(species)) |>
   gather(sp, nr, !!!syms(names(species))) |>
@@ -196,11 +194,11 @@ dat <- df |>
 
 cat("::: panel-tabset\n")
 for(sp in names(species)){
-  cat("\n#####", sp, " \n")
+  cat("\n\n#####", sp, " \n")
   plotYear(dat, sp)
 }
 cat("\n:::\n")
-cat("\n#### Trawl map \n")
+cat("\n\n#### Trawl map \n")
 europe <- ne_countries(continent = "europe", returnclass = "sf", scale = "large")
 ggplot() +
   geom_sf(data = europe) +
@@ -231,7 +229,7 @@ vif(predLayers)
 
 cat("\n::: panel-tabset  \n")
 for(pred in predictors){
-  cat("\n#####", pred," \n")
+  cat("\n\n#####", pred," \n")
   predStack[[pred]] |> plot()
 }
 cat("\n:::\n")
@@ -261,7 +259,7 @@ modQuartoFuncSDM_pre(modelID, species, timePeriod, quarter, dfAbu)
 #| output: asis
 
 RT <- reportTables(modelID, species, timePeriod, quarter, df, dfAbu)
-cat(paste("\n#### Förekomst \n"))
+cat(paste("\n\n#### Förekomst \n"))
 DT::datatable(RT[[1]],
               options = list(
                 dom = 't',
@@ -275,7 +273,7 @@ DT::datatable(RT[[1]],
               rownames = F) |>
   DT::formatRound(c(4, 6, 7), digits = 2, interval = 3, mark = " ")
 
-cat(paste("\n#### Abundans \n"))
+cat(paste("\n\n#### Abundans \n"))
 DT::datatable(RT[[2]],
               options = list(
                 dom = 't',
@@ -289,7 +287,7 @@ DT::datatable(RT[[2]],
               rownames = F) |>
   DT::formatRound(4:11, digits = 2, interval = 3, mark = " ")
 
-cat(paste("\n#### Delta \n"))
+cat(paste("\n\n#### Delta \n"))
 DT::datatable(RT[[3]],
               options = list(
                 dom = 't',
@@ -304,7 +302,7 @@ DT::datatable(RT[[3]],
   DT::formatRound(5:7, digits = 2, interval = 3, mark = " ") |>
   DT::formatRound(4, digits = 5, interval = 3, mark = " ")
 
-cat(paste("\n#### Var. Imp. - Förekomst \n"))
+cat(paste("\n\n#### Var. Imp. - Förekomst \n"))
 DT::datatable(RT[[4]],
               options = list(
                 dom = 't',
@@ -318,7 +316,7 @@ DT::datatable(RT[[4]],
               rownames = F)|>
   DT::formatRound(4:length(RT[[4]]), digits = 2, interval = 3, mark = " ")
 
-cat(paste("\n#### Var. Imp. - Abundans \n"))
+cat(paste("\n\n#### Var. Imp. - Abundans \n"))
 DT::datatable(RT[[5]],
               options = list(
                 dom = 't',

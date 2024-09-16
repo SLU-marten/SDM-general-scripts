@@ -55,26 +55,26 @@ visMod <- function(mod, ens){
   myVarImpPlot <- bm_PlotVarImpBoxplot(bm.out = mod, group.by = c('expl.var', 'algo', 'algo'), do.plot = FALSE)$plot
   
   cat("\n::: panel-tabset\n")
-  cat("\n##### Modell output\n")
+  cat("\n\n##### Modell output\n")
   cat("```{html}\n")
   cat(paste(capture.output(mod), collapse = "\n"))
   cat("\n```")
-  cat("\n##### Validering \n")
+  cat("\n\n##### Validering \n")
   cat("\n::: panel-tabset \n")
-  cat("\n##### variant 1 \n")
+  cat("\n\n##### variant 1 \n")
   bm_PlotEvalMean(mod)$plot
-  cat("\n##### Variant 2 \n")
+  cat("\n\n##### Variant 2 \n")
   plot(myEvalPlot)
   cat("\n:::\n")
-  cat("\n##### Vaiable importance\n")
+  cat("\n\n##### Vaiable importance\n")
   plot(myVarImpPlot)
-  cat("\n##### Responskurvor\n")
+  cat("\n\n##### Responskurvor\n")
   if(ens){
     bm_PlotResponseCurves(mod, do.progress = F)$plot
   } else{
     cat("\n::: panel-tabset \n")
     for(modType in c("GLM", "GAM", "GBM", "RF", "XGBOOST")){
-      cat("\n####", modType, " \n")
+      cat("\n\n####", modType, " \n")
       plot(bm_PlotResponseCurves(mod, models.chosen = get_built_models(mod, algo = modType), do.progress = F)$plot)
     }
     cat("\n:::\n")
@@ -85,13 +85,13 @@ visMod <- function(mod, ens){
 modQuartoFuncBiomod_pre <- function(modelID, species, timePeriod, quarter){
   cat("\n::: panel-tabset\n")
   for(sp in species) {
-    cat("\n#####", sp," \n")
+    cat("\n\n#####", sp," \n")
     if(length(timePeriod) > 1 ) cat("\n::: panel-tabset\n")  # Deactivate if we only have one timeperiod
     for(tp in names(timePeriod)){
-      if(length(timePeriod) > 1 ) cat("\n#####", tp," \n")  # Deactivate if we only have one timeperiod
+      if(length(timePeriod) > 1 ) cat("\n\n#####", tp," \n")  # Deactivate if we only have one timeperiod
       if(length(quarter) > 1 ) cat("\n::: panel-tabset\n")  # Deactivate if we only have one quarter
       for(q in names(quarter)){
-        if(length(timePeriod) > 1 ) cat("\n#####", q," \n") # Deactivate if we only have one quarter
+        if(length(timePeriod) > 1 ) cat("\n\n#####", q," \n") # Deactivate if we only have one quarter
         # Check if model failed
         errorFiles <- list.files(paste0("model output/", modelID, "/Error log"))
         if(paste(sp, tp, q, "errorlog.txt", sep = "_") %in% errorFiles){
@@ -109,29 +109,29 @@ modQuartoFuncBiomod_pre <- function(modelID, species, timePeriod, quarter){
         EMprojPA[EMprojPA == 0] <- NA
         
         cat("\n::: panel-tabset\n")
-        cat("\n##### Prediktion\n")
+        cat("\n\n##### Prediktion\n")
         cat("\n::: panel-tabset\n")
-        cat("\n##### Ensemble\n")
+        cat("\n\n##### Ensemble\n")
         plot(myBiomodEMProj)
-        cat("\n##### Enskilda modeller\n")
+        cat("\n\n##### Enskilda modeller\n")
         cat("\n::: panel-tabset\n")
         for(modType in c("GLM", "GAM", "GBM", "RF", "XGBOOST")){
-          cat("\n#####", modType, " \n")
+          cat("\n\n#####", modType, " \n")
           plot(myBiomodProj, algo = modType)
         }
         cat("\n:::\n")
-        cat("\n##### PA-mask \n")
+        cat("\n\n##### PA-mask \n")
         pp <- EMprojPA[[1]] |> 
           aqua::rasterPlot(sluCol = "green", rev=T, nClass = 1) |> 
           aqua::mapExtra()
         plot(pp)
         cat("\n:::\n")
-        cat("\n##### Modellering\n")
+        cat("\n\n##### Modellering\n")
         cat("\n::: panel-tabset\n")
-        cat("\n##### Data\n")
-        cat("\n##### Enskilda modeller\n")
+        cat("\n\n##### Data\n")
+        cat("\n\n##### Enskilda modeller\n")
         visMod(myBiomodModelOut, ens = F)
-        cat("\n##### Ensemblemodeller\n")
+        cat("\n\n##### Ensemblemodeller\n")
         # Ensemble
         tryCatch({
           visMod(myBiomodEM, ens = T)
@@ -170,13 +170,13 @@ insetMap <- function (map, rast){
 modQuartoFuncSDM_pre <- function(modelID, species, timePeriod, quarter, data){
   cat("\n::: panel-tabset\n")
   for(sp in names(species)) {
-    cat("\n#####", sp," \n")
+    cat("\n\n#####", sp," \n")
     if(length(timePeriod) > 1 ) cat("\n::: panel-tabset\n") # Deactivate if we only have one timeperiod
     for(tp in 1:length(timePeriod)){
-      if(length(timePeriod) > 1 ) cat("\n#####", names(timePeriod)[tp]," \n") # Deactivate if we only have one timeperiod
+      if(length(timePeriod) > 1 ) cat("\n\n#####", names(timePeriod)[tp]," \n") # Deactivate if we only have one timeperiod
       if(length(quarter) > 1 ) cat("\n::: panel-tabset\n") # Deactivate if we only have full year
       for(q in 1:length(quarter)){
-        if(length(quarter) > 1) cat("\n#####", names(quarter)[q]," \n") # Deactivate if we only have full year
+        if(length(quarter) > 1) cat("\n\n#####", names(quarter)[q]," \n") # Deactivate if we only have full year
         # Check if model failed
         errorFiles <- list.files(paste0("model output/", modelID, "/Error log"))
         if(paste(sp, names(timePeriod)[tp], names(quarter)[q], "errorlog.txt", sep = "_") %in% errorFiles){
@@ -209,7 +209,7 @@ modQuartoFuncSDM_pre <- function(modelID, species, timePeriod, quarter, data){
                                Quarter %in% unlist(unique(quarter[q])))
         
         cat("\n::: panel-tabset\n")
-        cat("\n##### Report figure \n")
+        cat("\n\n##### Report figure \n")
         # ext(enDelta) <- c(9.5, 13.5, 55, 59.5)
         p <- aqua::rasterPlot(enDelta, sluCol = "yellow", rev = T, nClass = 5, classMethod = "quantile") |>
           aqua::mapExtra() +
@@ -230,30 +230,30 @@ modQuartoFuncSDM_pre <- function(modelID, species, timePeriod, quarter, data){
                p3, width = 22, height = 12, units = "cm")
         plot(p3)
         
-        cat("\n##### Model\n")
+        cat("\n\n##### Model\n")
         cat("```{html}\n")
         tryCatch(cat(paste(capture.output(sdm_M), collapse = "\n")), error = function(e){cat(capture.output(e))})
         cat("\n```")
         tryCatch(cat(capture.output(getModelInfo(sdm_M)), "```", sep="\n"), error = function(e){cat(capture.output(e))})
         
-        cat("\n##### Partial response\n")
+        cat("\n\n##### Partial response\n")
         cat("\n::: panel-tabset\n")
-        cat("\n##### Ensemble\n")
+        cat("\n\n##### Ensemble\n")
         tryCatch(plot(rcurve(sdm_M, id = sdm_M@run.info$modelID)), error = function(e){cat(capture.output(message(e)))})
         for(l in 1:(length(sdm_M@setting@methods))){
-          cat("\n#####", sdm_M@setting@methods[l], " \n")
+          cat("\n\n#####", sdm_M@setting@methods[l], " \n")
           tryCatch(plot(rcurve(sdm_M, id = (1:sdm_M@setting@n.replicates) + (l - 1) * sdm_M@setting@n.replicates)), error = function(e){cat(capture.output(e))})
           if(sdm_M@setting@methods[l] == "rf"){
             tryCatch(plot(rcurve(sdm_M, id = (1:sdm_M@setting@n.replicates) + (l - 1) * sdm_M@setting@n.replicates), gg = F), error = function(e){cat(capture.output(e))})
           }
         }
         cat("\n:::\n")
-        cat("\n##### Ind. predictions\n")
+        cat("\n\n##### Ind. predictions\n")
         cat("\n::: panel-tabset\n")
-        cat("\n##### Ensemble\n")
+        cat("\n\n##### Ensemble\n")
         tryCatch(plot(sdm_E), error = function(e){cat(capture.output(e))})
         for(l in 1:length(sdm_M@setting@methods)){
-          cat("\n#####", sdm_M@setting@methods[l], " \n")
+          cat("\n\n#####", sdm_M@setting@methods[l], " \n")
           tryCatch(plot(sdm_P[[which(grepl(sdm_M@setting@methods[l], names(sdm_P)))]]), error = function(e){cat(capture.output(e))})
         }
         cat("\n:::\n")
