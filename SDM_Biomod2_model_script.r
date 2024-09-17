@@ -10,7 +10,7 @@ library(biomod2) # Presence/absence modeling
 library(quarto)
 
 # Create folder structure
-modelID <- "20240910"
+modelID <- "20240917"
 pathPA <- paste0(getwd(), "/model output/", modelID, "/PA")
 dir.create(pathPA, recursive = TRUE)
 
@@ -48,6 +48,7 @@ formula <- paste(" ~", paste(predictors, collapse = " + "))
 biomodMethods <- c("GLM", "GBM", "GAM", "RF", "XGBOOST")
 sdmMethods <- c('glm', 'brt', 'rf')
 coordNames <- c("ShootLong", "ShootLat")
+comment <- "First version testing the beta version for abundance modelling in biomod2"
 
 # Write file with selected model parameters
 modPar <- c(paste("Timeperiod:", paste(timePeriod, collapse = ", ")),
@@ -58,7 +59,8 @@ modPar <- c(paste("Timeperiod:", paste(timePeriod, collapse = ", ")),
             paste("nRepAbu_SubSamp:", nRepAbu_SubSamp),
             paste("Formula:", formula),
             paste("Biomod modeltypes:", paste(biomodMethods, collapse = ", ")),
-            paste("SDM modeltypes:", paste(sdmMethods, collapse = ", ")))
+            paste("SDM modeltypes:", paste(sdmMethods, collapse = ", ")),
+            paste("Comment:", comment))
 
 write.table(modPar, paste0(getwd(), "/model output/", modelID, "/modelParameters.txt"),
             col.names = FALSE, row.names = FALSE, quote = FALSE)
@@ -104,7 +106,7 @@ for(tp in 1:length(timePeriod)){
                                             CV.perc = 0.75, # Cross validation split percentage
                                             CV.do.full.models = TRUE, # Defining whether models should be also calibrated and validated over the whole dataset
                                             var.import = nRepPA_VI,
-                                            metric.eval = c("TSS","ROC"), # Validation methods
+                                            metric.eval = c("TSS", "ROC"), # Validation methods
                                             do.progress = FALSE # Should a progress bar be displayed in the console
                                             # nb.cpu = 6 # Number of cpu-cores to be used
                                             )
@@ -167,7 +169,7 @@ for(tp in 1:length(timePeriod)){
         ### Prediction ####
         
         # Individual models
-        sdm_P <- predict(sdm_M, stack(rast(predStack)))
+        sdm_P <- terra::predict(sdm_M, predStack)
         
         # Ensemble prediction weighted by the individual models correlation value
         sdm_E <- ensemble(sdm_M, sdm_P, setting = list(method = 'weighted', stat = 'cor', expr = 'cor > 0'))
