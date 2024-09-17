@@ -48,6 +48,7 @@ formula <- paste(" ~", paste(predictors, collapse = " + "))
 biomodMethods <- c("GLM", "GBM", "GAM", "RF", "XGBOOST")
 sdmMethods <- c('glm', 'brt', 'rf')
 coordNames <- c("ShootLong", "ShootLat")
+comment <- "First version testing the beta version for abundance modelling in biomod2"
 
 # Write file with selected model parameters
 modPar <- c(paste("Timeperiod:", paste(timePeriod, collapse = ", ")),
@@ -58,7 +59,8 @@ modPar <- c(paste("Timeperiod:", paste(timePeriod, collapse = ", ")),
             paste("nRepAbu_SubSamp:", nRepAbu_SubSamp),
             paste("Formula:", formula),
             paste("Biomod modeltypes:", paste(biomodMethods, collapse = ", ")),
-            paste("SDM modeltypes:", paste(sdmMethods, collapse = ", ")))
+            paste("SDM modeltypes:", paste(sdmMethods, collapse = ", ")),
+            paste("Comment:", comment))
 
 write.table(modPar, paste0(getwd(), "/model output/", modelID, "/modelParameters.txt"),
             col.names = FALSE, row.names = FALSE, quote = FALSE)
